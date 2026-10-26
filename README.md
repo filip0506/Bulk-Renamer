@@ -1,7 +1,3 @@
-Here’s a README tailored to your Bulk File Renamer project. It covers the features, setup, usage, testing, and current limitations without claiming functionality that hasn't been verified.
-
-Writing
-
 # Bulk File Renamer
 
 A lightweight, browser-based application for renaming multiple files and downloading them together in a ZIP archive.
