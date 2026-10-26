@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bulk Renamer Tests</title>
+    <link rel="stylesheet" href="../css/style.css">
+    <style>
+        body { font: 16px system-ui, sans-serif; margin: 2rem; }
+        .pass { color: #047857; }
+        .fail { color: #b91c1c; }
+    </style>
+</head>
+<body>
+    <h1>Bulk Renamer Tests</h1>
+    <p id="summary" role="status" aria-live="polite">Running tests...</p>
+    <ol id="test-results"></ol>
+
+    <div hidden>
+        <input type="file" id="file-input" multiple aria-label="Choose files to rename">
+        <div id="drop-zone" role="button" tabindex="0" aria-disabled="false"></div>
+        <span id="upload-help"></span>
+        <label for="prefix-input">Prefix</label><input id="prefix-input">
+        <select id="name-behavior">
+            <option value="keep" selected>Keep</option>
+            <option value="replace">Replace</option>
+            <option value="empty">Empty</option>
+        </select>
+        <div id="custom-name-wrapper"></div>
+        <label for="name-behavior">Name behavior</label>
+        <label for="custom-name-input">Custom name</label><input id="custom-name-input">
+        <label for="suffix-input">Suffix</label><input id="suffix-input">
+        <select id="numbering-toggle">
+            <option value="none" selected>None</option>
+            <option value="suffix">Suffix</option>
+            <option value="prefix">Prefix</option>
+        </select>
+        <label for="numbering-toggle">Numbering</label>
+        <table>
+            <caption>Filename preview</caption>
+            <thead><tr><th id="original-filename-heading">Original</th><th id="transformed-filename-heading">Transformed</th><th id="action-heading">Action</th></tr></thead>
+            <tbody id="preview-body"></tbody>
+        </table>
+        <button id="download-btn" disabled>
+            <svg viewBox="0 0 24 24"></svg>
+            Download Renamed Archive (.zip)
+        </button>
+        <button id="clear-btn" hidden></button>
+        <label for="zip-name">ZIP Filename</label><input id="zip-name" value="renamed_files">
+        <span id="zip-name-help">.zip extension is optional</span>
+        <p id="status-message"></p>
+        <p id="error-message" hidden></p>
+    </div>
+
+    <script src="../lib/jszip.min.js"></script>
+    <script src="../js/app.js"></script>
+    <script src="./app.test.js"></script>
+</body>
+</html>

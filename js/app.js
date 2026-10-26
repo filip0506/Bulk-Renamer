@@ -4,6 +4,8 @@
 // Stores all files that the user has selected or dragged
 // into the application. These files will be renamed and zipped.
 let queuedFiles = [];
+let isDownloading = false;
+let dragEnterDepth = 0;
 
 // ==========================================
 // 2. DOM ELEMENT REFERENCES
@@ -22,6 +24,10 @@ const previewBody = document.getElementById('preview-body');
 const downloadBtn = document.getElementById('download-btn');
 const clearBtn = document.getElementById('clear-btn');
 const zipNameInput = document.getElementById('zip-name');
+const statusMessage = document.getElementById('status-message');
+const errorMessage = document.getElementById('error-message');
+const downloadButtonContents = downloadBtn.innerHTML;
+const namingControls = [prefixInput, nameBehavior, customNameInput, suffixInput, numberingToggle, zipNameInput];
 
 // ==========================================
 // 3. UI EVENT REGISTRATIONS
@@ -31,7 +37,19 @@ const zipNameInput = document.getElementById('zip-name');
 
 // Open the file selection dialog when the drop zone is clicked.
 // fileInput.click() programmatically activates the file input.
-dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('click', (e) => {
+    const interactiveTarget = e.target.closest('a, area[href], button, input, select, textarea, label, summary, audio[controls], video[controls], iframe, object, embed, [role="button"], [role="link"], [contenteditable="true"], [tabindex]:not([tabindex="-1"])');
+    if (!isDownloading && (!interactiveTarget || interactiveTarget === dropZone)) {
+        fileInput.click();
+    }
+});
+
+dropZone.addEventListener('keydown', (e) => {
+    if (!isDownloading && e.target === dropZone && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        fileInput.click();
+    }
+});
 
 // Handle files selected through the file browser.
 fileInput.addEventListener('change', (e) => {
@@ -44,7 +62,15 @@ fileInput.addEventListener('change', (e) => {
 });
 
 // Handle files being dragged over the drop zone.
+dropZone.addEventListener('dragenter', (e) => {
+    if (isDownloading) return;
+    e.preventDefault();
+    dragEnterDepth++;
+    dropZone.classList.add('drag-over');
+});
+
 dropZone.addEventListener('dragover', (e) => {
+    if (isDownloading) return;
     // Prevent the browser's default behavior, which could
     // otherwise open the dragged file instead of accepting it.
     e.preventDefault();
@@ -52,18 +78,29 @@ dropZone.addEventListener('dragover', (e) => {
     dropZone.classList.add('drag-over');
 });
 
-// Listen for dragleave and dragend events.
-// Remove the highlight when the drag operation leaves or ends.
-['dragleave', 'dragend'].forEach(type => {
-    dropZone.addEventListener(type, () => dropZone.classList.remove('drag-over'));
+// Track nested dragenter/dragleave pairs; relatedTarget may be null during a drag.
+dropZone.addEventListener('dragleave', () => {
+    dragEnterDepth = Math.max(0, dragEnterDepth - 1);
+    if (dragEnterDepth === 0) {
+        dropZone.classList.remove('drag-over');
+    }
 });
+function clearDragHighlight() {
+    dragEnterDepth = 0;
+    dropZone.classList.remove('drag-over');
+}
+
+dropZone.addEventListener('dragend', clearDragHighlight);
+window.addEventListener('dragend', clearDragHighlight);
 
 // Handle files dropped onto the drop zone.
 dropZone.addEventListener('drop', (e) => {
     // Prevent the browser from opening the dropped files.
     e.preventDefault();
     // Remove the visual highlight from the drop zone.
+    dragEnterDepth = 0;
     dropZone.classList.remove('drag-over');
+    if (isDownloading) return;
     // Check whether at least one file was dropped.
     if (e.dataTransfer.files.length > 0) {
         // Add the dropped files to the queue and refresh the preview.
@@ -75,14 +112,10 @@ dropZone.addEventListener('drop', (e) => {
 // Whenever one of these controls changes, update the preview.
 [prefixInput, customNameInput, suffixInput, nameBehavior, numberingToggle].forEach(element => {
     element.addEventListener('input', () => {
+        if (isDownloading) return;
         // Show the custom-name input only when the user
         // selects the option to replace the original filename.
-        if(nameBehavior.value === 'replace') {
-            customNameWrapper.style.display = 'flex';
-        } else {
-            // Hide the custom-name input for other naming options.
-            customNameWrapper.style.display = 'none';
-        }
+        customNameWrapper.hidden = nameBehavior.value !== 'replace';
         // Recalculate the filenames and refresh the preview table.
         renderPreviewWorkspace();
     });
@@ -90,10 +123,12 @@ dropZone.addEventListener('drop', (e) => {
 
 // Handle clicks on the Clear button.
 clearBtn.addEventListener('click', () => {
+    if (isDownloading) return;
     // Empty the queue by replacing it with a new empty array.
     queuedFiles = [];
     // Refresh the interface to reflect the empty queue.
     renderPreviewWorkspace();
+    setStatusMessage('File queue cleared.');
 });
 
 // Start the ZIP generation and download process when the
@@ -107,6 +142,7 @@ downloadBtn.addEventListener('click', packageAndDistributeZip);
 
 // Add selected or dragged files to the queue.
 function handleFilesInput(filesList) {
+    if (isDownloading) return;
     // Loop through all files in the supplied FileList.
     for (let i = 0; i < filesList.length; i++) {
         // Add each file to the end of the queuedFiles array.
@@ -115,10 +151,14 @@ function handleFilesInput(filesList) {
 
     // Update the preview table to include the new files.
     renderPreviewWorkspace();
+    if (filesList.length > 0) {
+        setStatusMessage(`${queuedFiles.length} file${queuedFiles.length === 1 ? '' : 's'} queued.`);
+    }
 }
 
 // Remove an individual file from the queue.
 function removeIndividualFile(targetIndex) {
+    if (isDownloading) return;
     // Remove one file at the specified array index.
     // The second argument, 1, means that only one item is removed.
     queuedFiles.splice(targetIndex, 1);
@@ -133,15 +173,16 @@ function renderPreviewWorkspace() {
     if (queuedFiles.length === 0) {
         previewBody.innerHTML = `<tr><td colspan="3" class="empty-state">No files queued. Drag files or browse to begin staging.</td></tr>`;
         downloadBtn.disabled = true;
-        clearBtn.style.display = 'none';
+        clearBtn.hidden = true;
 
         // Stop here because there are no files to display.
         return;
     }
 
     // Show the Clear button and enable downloading when files exist.
-    clearBtn.style.display = 'inline-block';
-    downloadBtn.disabled = false;
+    clearBtn.hidden = false;
+    clearBtn.disabled = isDownloading;
+    downloadBtn.disabled = isDownloading;
 
     // Remove existing table rows before rebuilding the preview.
     previewBody.innerHTML = '';
@@ -168,16 +209,20 @@ function renderPreviewWorkspace() {
         const newCell = document.createElement('td');
         newCell.className = 'new-name';
         newCell.textContent = transformedName;
+        newCell.setAttribute('headers', 'transformed-filename-heading');
+        oldCell.setAttribute('headers', 'original-filename-heading');
 
         // Create a cell for the Remove button.
         const actionCell = document.createElement('td');
         actionCell.className = 'action-column';
+        actionCell.setAttribute('headers', 'action-heading');
         
         // Create a button that removes this file from the queue.
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'btn-text-danger';
         deleteBtn.innerHTML = '&times; Remove';
-        deleteBtn.setAttribute('title', 'Remove file from queue');
+        deleteBtn.setAttribute('aria-label', `Remove ${file.name}`);
+        deleteBtn.disabled = isDownloading;
         
         // When clicked, remove this file and refresh the preview.
         deleteBtn.addEventListener('click', () => removeIndividualFile(index));
@@ -197,30 +242,40 @@ function renderPreviewWorkspace() {
 async function packageAndDistributeZip() {
 
     // Do nothing if there are no files to package.
-    if (queuedFiles.length === 0) return;
+    if (queuedFiles.length === 0 || isDownloading) return;
     
     // Make sure the JSZip library has been loaded before using it.
     if (typeof JSZip === 'undefined') {
-        alert("Error: JSZip library was not found. Please verify that './lib/jszip.min.js' is placed correctly.");
+        const error = new Error("JSZip is unavailable; the bundled './lib/jszip.min.js' script did not load.");
+        console.error('ZIP pipeline failure:', error);
+        setErrorMessage('The ZIP library could not be loaded. Reload the page and try again.');
         return;
     }
     
+    const filesToArchive = queuedFiles.slice();
+    const safeNamesList = resolveAllNames();
+    const archiveFilename = getZipFilename();
+
     // Disable the button to prevent repeated clicks while generating.
+    isDownloading = true;
+    clearDragHighlight();
+    setGenerationUIState(true);
     downloadBtn.disabled = true;
     downloadBtn.textContent = 'Generating Pack...';
+    setStatusMessage('Creating ZIP from the current files and naming settings. Changes are temporarily disabled.');
 
+    let downloadUrl;
+    let revokeScheduled = false;
+    let linkElement;
     try {
         
         // Create a new JSZip archive instance.
         const zip = new JSZip();
 
-        // Calculate the final filenames using the current settings.
-        const safeNamesList = resolveAllNames();
-
         // Add each queued file to the ZIP using its new filename.
         // The file data is added without modifying its contents.
-        for (let i = 0; i < queuedFiles.length; i++) {
-            zip.file(safeNamesList[i], queuedFiles[i]);
+        for (let i = 0; i < filesToArchive.length; i++) {
+            zip.file(safeNamesList[i], filesToArchive[i]);
         }
 
         // Generate the ZIP archive asynchronously as a Blob.
@@ -228,33 +283,61 @@ async function packageAndDistributeZip() {
         const finalBlob = await zip.generateAsync({ type: 'blob' });
         
         // Create a temporary link element to initiate the download.
-        const linkElement = document.createElement('a');
-        
-        // Use the user's ZIP filename, or a default if left blank.
-        let customizedZipName = zipNameInput.value.trim() || 'renamed_files';
+        linkElement = document.createElement('a');
         
         // Create a temporary URL pointing to the generated ZIP data.
-        linkElement.href = URL.createObjectURL(finalBlob);
-        // Ensure the downloaded archive has the ".zip" extension.
-        linkElement.download = customizedZipName.endsWith('.zip') ? customizedZipName : `${customizedZipName}.zip`;
+        downloadUrl = URL.createObjectURL(finalBlob);
+        linkElement.href = downloadUrl;
+        linkElement.download = archiveFilename;
+        linkElement.style.display = 'none';
+        document.body.appendChild(linkElement);
         // Programmatically click the link to start the download.
         linkElement.click();
         
-        // Schedule revocation of the temporary object URL shortly after
-        // initiating the download to help release the associated resources.
-        setTimeout(() => URL.revokeObjectURL(linkElement.href), 100);
+        // Best-effort cleanup only: browsers do not expose a reliable download-completion event for this link.
+        setTimeout(() => URL.revokeObjectURL(downloadUrl), 300_000);
+        revokeScheduled = true;
+        setStatusMessage('ZIP download started.');
 
     } catch (err) {
         // Log technical details to the console for debugging.
         console.error("ZIP pipeline failure:", err);
-        // Show a user-friendly error message.
-        alert("Error creating zip archive via JSZip.");
+        setErrorMessage('Could not create or download the ZIP archive. Check the console for details.');
     } finally {
-        // Re-enable the download button regardless of success or failure.
-        downloadBtn.disabled = false;
+        if (linkElement) linkElement.remove();
+        if (downloadUrl && !revokeScheduled) URL.revokeObjectURL(downloadUrl);
+        isDownloading = false;
+        setGenerationUIState(false);
+        renderPreviewWorkspace();
         // Restore the default download button label and icon.
-        downloadBtn.innerHTML = `<svg style="width:20px;height:20px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg> Download Renamed Archive (.zip)`;
+        downloadBtn.innerHTML = downloadButtonContents;
     }
+
+}
+
+function setGenerationUIState(generating) {
+    namingControls.forEach(control => {
+        control.disabled = generating;
+    });
+    fileInput.disabled = generating;
+    clearBtn.disabled = generating;
+    previewBody.querySelectorAll('.btn-text-danger').forEach(button => {
+        button.disabled = generating;
+    });
+    dropZone.setAttribute('aria-disabled', String(generating));
+    dropZone.tabIndex = generating ? -1 : 0;
+}
+
+function setStatusMessage(message) {
+    statusMessage.textContent = message;
+    errorMessage.hidden = true;
+    errorMessage.textContent = '';
+}
+
+function setErrorMessage(message) {
+    errorMessage.textContent = message;
+    errorMessage.hidden = false;
+    statusMessage.textContent = '';
 }
 
 
@@ -265,17 +348,7 @@ async function packageAndDistributeZip() {
 // Calculate the new filename for a file based on the user's
 // selected naming options and the file's position in the queue.
 function computeNewName(file, index) {
-    // Find the position of the last dot in the original filename.
-    // This is used to separate the base filename from its extension.
-    const lastDot = file.name.lastIndexOf('.');
-    
-    // Extract the base filename without the final extension.
-    // If there is no dot, use the entire filename.
-    let baseName = lastDot !== -1 ? file.name.substring(0, lastDot) : file.name;
-    
-    // Extract the extension, including the dot.
-    // If there is no dot, use an empty string.
-    const extension = lastDot !== -1 ? file.name.substring(lastDot) : '';
+    let { baseName, extension } = splitFilenameExtension(file.name);
 
     // Check which naming behavior the user selected.
     if (nameBehavior.value === 'replace') {
@@ -328,45 +401,93 @@ function computeNewName(file, index) {
         finalComputedString = `file_${index + 1}`;
     }
 
-    // Append the original extension and return the new filename.
-    return finalComputedString + extension;
+    // Append the original extension and sanitize the flat ZIP entry filename.
+    return sanitizeEntryName(finalComputedString + extension, index);
 }
 
 function resolveAllNames() {
     const finalNames = [];
-    
-    // Track how many times each filename has been encountered.
-    const nameCounts = {};
+    const usedNames = new Set();
 
     queuedFiles.forEach((file, index) => {
         // Generate the filename using the current naming settings.
         let proposedName = computeNewName(file, index);
-        
-        // If the filename already exists, append a numbered suffix.
-        if (nameCounts[proposedName]) {
-            const lastDot = proposedName.lastIndexOf('.');
-            const base = lastDot !== -1 ? proposedName.substring(0, lastDot) : proposedName;
-            const ext = lastDot !== -1 ? proposedName.substring(lastDot) : '';
-            
-            // Find the next available numbered filename.
+
+        const nameKey = getCollisionKey(proposedName);
+        if (usedNames.has(nameKey)) {
+            const { baseName, extension } = splitFilenameExtension(proposedName);
             let counter = 1;
-            let adjustedName = `${base} (${counter})${ext}`;
-            while (finalNames.includes(adjustedName)) {
+            let adjustedName;
+            do {
+                adjustedName = sanitizeEntryName(`${baseName} (${counter})${extension}`, index);
                 counter++;
-                adjustedName = `${base} (${counter})${ext}`;
-            }
+            } while (usedNames.has(getCollisionKey(adjustedName)));
             proposedName = adjustedName;
         }
-        
-        // Store the resolved filename and update the occurrence count.
+
         finalNames.push(proposedName);
-        nameCounts[proposedName] = (nameCounts[proposedName] || 0) + 1;
+        usedNames.add(getCollisionKey(proposedName));
     });
 
-    // Return filenames in the same order as the queued files.
     return finalNames;
 }
 
+function getCollisionKey(filename) {
+    // Compare Unicode canonically equivalent names after NFC normalization and default Unicode lowercase.
+    return filename.normalize('NFC').toLowerCase().normalize('NFC');
+}
 
+function splitFilenameExtension(filename) {
+    const lastDot = filename.lastIndexOf('.');
+    if (lastDot <= 0) {
+        return { baseName: filename, extension: '' };
+    }
+    return {
+        baseName: filename.substring(0, lastDot),
+        extension: filename.substring(lastDot)
+    };
+}
 
+function sanitizeEntryName(filename, index) {
+    let sanitizedName = sanitizeFilenameCharacters(filename);
+    if (!sanitizedName) {
+        sanitizedName = `file_${index + 1}`;
+    }
 
+    if (isReservedDeviceName(sanitizedName)) {
+        sanitizedName = `_${sanitizedName}`;
+    }
+
+    return sanitizedName;
+}
+
+function sanitizeFilenameCharacters(filename) {
+    // Flat ZIP entries replace invalid/control characters with underscores, trim trailing spaces or dots, and prefix device names.
+    return filename
+        .replace(/[\u0000-\u001f<>:"/\\|?*]/g, '_')
+        .replace(/[ .]+$/g, '');
+}
+
+function isReservedDeviceName(filename) {
+    const deviceName = filename.split('.')[0].replace(/[ .]+$/g, '');
+    return /^(con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])$/i.test(deviceName);
+}
+
+function getZipFilename() {
+    // ZIP archive names use the same character policy but are validated independently of entry names.
+    let filename = sanitizeFilenameCharacters(zipNameInput.value.trim());
+    let extension = /\.zip$/i.test(filename) ? filename.slice(-4) : '.zip';
+
+    while (/\.zip$/i.test(filename)) {
+        filename = filename.slice(0, -4);
+    }
+
+    if (!filename) {
+        filename = 'renamed_files';
+    }
+    if (isReservedDeviceName(filename)) {
+        filename = `_${filename}`;
+    }
+
+    return `${filename}${extension}`;
+}
