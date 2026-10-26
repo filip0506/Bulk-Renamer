@@ -32,8 +32,6 @@ Bulk File Renamer lets you customize filenames, preview changes before downloadi
 
 The project uses the following files and directories:
 
-text
-
 ```
 bulk-file-renamer/
 ├── index.html
