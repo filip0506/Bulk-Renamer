@@ -1,0 +1,4 @@
+Your Project Name
+Copyright 2026 Filip Michael
+This product includes software developed by third parties:
+* JSZip (MIT License) - Copyright (c) 2009-2016 Stuart Knightley, David Duponchel, Franz Buchinger, António Afonso
