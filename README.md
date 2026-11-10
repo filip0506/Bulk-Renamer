@@ -125,16 +125,6 @@ After modifying the application, rerun the test suite and manually verify the af
 - Very large files or batches may require substantial browser memory while the ZIP archive is generated.
 - The project does not currently provide a Node.js-based build, lint, or test workflow.
 
-## Contributing
-
-When modifying the application:
-
-- Preserve the existing interface and functionality unless a change is necessary.
-- Prefer focused, minimal changes over a complete rewrite.
-- Add regression tests for bug fixes and new behavior.
-- Run the browser test suite after making changes.
-- Review the final diff to ensure that unrelated files and features have not been changed.
-
 ## License
 
 This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE) file for details.
